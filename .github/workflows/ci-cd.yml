@@ -1,0 +1,64 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main # Adjust to your branch name
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: Check out the code
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Step 2: Set up PHP environment
+    - name: Set up PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: 8.3
+        extensions: mbstring, pdo, bcmath, zip
+        coverage: none
+
+    # Step 3: Install Composer dependencies
+    - name: Install dependencies
+      run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+    # Step 4: Set up environment
+    - name: Set up .env
+      run: |
+        cp .env.example .env
+        php artisan key:generate
+
+    # Step 5: Run database migrations and tests
+    - name: Run migrations
+      env:
+        DB_CONNECTION: sqlite
+        DB_DATABASE: ':memory:'
+      run: php artisan migrate --seed --force
+
+    - name: Run tests
+      run: vendor/bin/phpunit
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: Check out the code
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Step 2: Deploy to server
+    - name: Deploy application
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        HOST: ${{ secrets.HOST }}
+        USER: ${{ secrets.USER }}
+      run: |
+        echo "${SSH_PRIVATE_KEY}" > private_key
+        chmod 600 private_key
+        rsync -azP -e "ssh -i private_key" ./ $USER@$HOST:/path/to/your/app
+        ssh -i private_key $USER@$HOST "cd /path/to/your/app && php artisan migrate --force && php artisan cache:clear"
